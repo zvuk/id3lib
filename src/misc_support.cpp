@@ -31,8 +31,9 @@
 #include "misc_support.h"
 //#include "field.h"
 #include "id3/utils.h" // has <config.h> "id3/id3lib_streams.h" "id3/globals.h" "id3/id3lib_strings.h"
+#include "id3/helpers.h"
 
-//using namespace dami;
+using namespace dami;
 
 char *ID3_GetString(const ID3_Frame *frame, ID3_FieldID fldName)
 {
@@ -41,13 +42,10 @@ char *ID3_GetString(const ID3_Frame *frame, ID3_FieldID fldName)
   ID3_Field* fld;
   if (NULL != frame && NULL != (fld = frame->GetField(fldName)))
   {
-//    ID3_Field* fld = frame->GetField(fldName);
-    ID3_TextEnc enc = fld->GetEncoding();
-    fld->SetEncoding(ID3TE_ISO8859_1);
-    size_t nText = fld->Size();
+    String str = id3::v2::getString(frame, fldName);
+    size_t nText = str.size();
     text = new char[nText + 1];
-    fld->Get(text, nText + 1);
-    fld->SetEncoding(enc);
+    str.copy(text, nText);
   }
   return text;
 }
@@ -57,9 +55,10 @@ char *ID3_GetString(const ID3_Frame *frame, ID3_FieldID fldName, size_t nIndex)
   char *text = NULL;
   if (NULL != frame)
   {
-    size_t nText = frame->GetField(fldName)->Size();
+    String str = id3::v2::getStringAtIndex(frame, fldName, nIndex);
+    size_t nText = str.size();
     text = new char[nText + 1];
-    frame->GetField(fldName)->Get(text, nText + 1, nIndex);
+    str.copy(text, nText);
   }
   return text;
 }

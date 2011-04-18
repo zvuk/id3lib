@@ -906,7 +906,7 @@ ID3_FieldImpl::ID3_FieldImpl(const ID3_FieldDef& def)
     _changed(false),
     _fixed_size(def._fixed_size),
     _num_items(0),
-    _enc((_type == ID3FTY_TEXTSTRING) ? ID3TE_ASCII : ID3TE_NONE)
+    _enc((_type == ID3FTY_TEXTSTRING) ? ID3TE_NATIVE : ID3TE_NONE)
 {
   this->Clear();
 }
@@ -943,11 +943,11 @@ void ID3_FieldImpl::Clear()
       _text.erase();
       if (_fixed_size > 0)
       {
-        if (this->GetEncoding() == ID3TE_UNICODE)
+        if (ID3TE_IS_DOUBLE_BYTE_ENC(this->GetEncoding()))
         {
           _text.assign(_fixed_size * 2, '\0');
         }
-        else if (this->GetEncoding() == ID3TE_ASCII)
+        else if (ID3TE_IS_SINGLE_BYTE_ENC(this->GetEncoding()))
         {
           _text.assign(_fixed_size, '\0');
         }

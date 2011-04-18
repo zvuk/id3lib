@@ -49,10 +49,10 @@ using namespace dami;
 size_t ID3_FieldImpl::Set(const unicode_t* data)
 {
   size_t size = 0;
-  if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE && data)
+  if (this->GetType() == ID3FTY_TEXTSTRING && data)
   {
     String text((const char*) data, ucslen(data) * 2);
+    this->SetEncoding(ID3TE_UTF16);
     size = this->SetText_i(text);
   }
   return size;
@@ -62,7 +62,7 @@ size_t ID3_FieldImpl::Add(const unicode_t* data)
 {
   size_t size = 0;
   if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE)
+      ID3TE_IS_DOUBLE_BYTE_ENC(this->GetEncoding()))
   {
     String text((const char*) data, ucslen(data) * 2);
     size = this->AddText_i(text);
@@ -93,26 +93,27 @@ size_t ID3_FieldImpl::Add(const unicode_t* data)
 size_t ID3_FieldImpl::Get(unicode_t *buffer, size_t maxLength) const
 {
   size_t length = 0;
-  if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE &&
-      buffer != NULL && maxLength > 0)
+  if (this->GetType() != ID3FTY_TEXTSTRING ||
+      buffer == NULL || maxLength <= 0)
   {
-    size_t size = this->Size();
-    length = dami::min(maxLength, size);
-    ::memcpy((void *)buffer, (void *)_text.data(), length * 2);
-    if (length < maxLength)
-    {
-      buffer[length] = NULL_UNICODE;
-    }
+    return 0;
   }
+  String utf = dami::convert(_text, this->GetEncoding(), ID3TE_UTF16);
+  /*
+   * maxLenght-1 is used to leave room for the terminating \0.
+   * Safe by default is good.
+   * http://www.courtesan.com/todd/papers/strlcpy.html
+   */
+  length = dami::min(maxLength-1, utf.size()/2);
+  utf.copy((char*)buffer, length * 2);
+  buffer[length] = NULL_UNICODE;
   return length;
 }
 
 const unicode_t* ID3_FieldImpl::GetRawUnicodeText() const
 {
   const unicode_t* text = NULL;
-  if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE)
+  if (this->GetType() == ID3FTY_TEXTSTRING)
   {
     text = (unicode_t *)_text.data();
   }
@@ -123,7 +124,7 @@ const unicode_t* ID3_FieldImpl::GetRawUnicodeTextItem(size_t index) const
 {
   const unicode_t* text = NULL;
   if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE &&
+      ID3TE_IS_DOUBLE_BYTE_ENC(this->GetEncoding()) &&
       index < this->GetNumTextItems())
   {
     String unicode = _text + '\0' + '\0';
@@ -140,23 +141,28 @@ size_t ID3_FieldImpl::Get(unicode_t *buffer, size_t maxLength, size_t itemNum) c
 {
   size_t length = 0;
   size_t total_items = this->GetNumTextItems();
-  if (this->GetType() == ID3FTY_TEXTSTRING &&
-      this->GetEncoding() == ID3TE_UNICODE &&
-      buffer != NULL && maxLength > 0 && itemNum < total_items)
+  if (this->GetType() != ID3FTY_TEXTSTRING ||
+      buffer == NULL || maxLength <= 0 || itemNum >= total_items)
   {
-    const unicode_t* text = this->GetRawUnicodeTextItem(itemNum);
-    if (NULL != text)
-    {
-      size_t length = dami::min(maxLength, ucslen(text));
-      ::memcpy(buffer, text, length * 2);
-      if (length < maxLength)
-      {
-        buffer[length] = NULL_UNICODE;
-      }
-    }
+    return 0;
   }
+
+  const unicode_t *raw = this->GetRawUnicodeTextItem(itemNum);
+  if (raw == NULL)
+  {
+    return 0;
+  }
+  String s;
+  s.append((char*) raw, ucslen(raw)*2);
+  String data = dami::convert(s, this->GetEncoding(), ID3TE_UTF16);
+  /*
+   * maxLenght-1 is used to leave room for the terminating \0.
+   * Safe by default is good.
+   * http://www.courtesan.com/todd/papers/strlcpy.html
+   */
+  length = dami::min(maxLength-1, data.size()/2);
+  data.copy((char*)buffer, length * 2);
+  buffer[length] = NULL_UNICODE;
 
   return length;
 }
-
-

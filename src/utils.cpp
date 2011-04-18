@@ -41,6 +41,8 @@
 // check if we have all unicodes
 #if (defined(ID3_ICONV_FORMAT_UTF16BE) && defined(ID3_ICONV_FORMAT_UTF16) && defined(ID3_ICONV_FORMAT_UTF8) && defined(ID3_ICONV_FORMAT_ASCII))
 # include <iconv.h>
+# include <locale.h>
+# include <langinfo.h>
 # include <errno.h>
 #else
 # undef HAVE_ICONV_H
@@ -54,7 +56,15 @@ dami::String mbstoucs(dami::String data)
   dami::String unicode(size * 2, '\0');
   for (size_t i = 0; i < size; ++i)
   {
-    unicode[i*2+1] = toascii(data[i]);
+    unsigned char c = data[i];
+    if ((c & 0x80) == 0)
+    {
+      unicode[i*2+1] = c;
+    }
+    else
+    {
+      unicode[i*2+1] = '?';
+    }
   }
   return unicode;
 }
@@ -66,7 +76,15 @@ dami::String ucstombs(dami::String data)
   dami::String ascii(size, '\0');
   for (size_t i = 0; i < size; ++i)
   {
-    ascii[i] = toascii(data[i*2+1]);
+    static unicode_t *c = (unicode_t *)&data[i*2];
+    if ((*c & 0xff80) == 0)
+    {
+      ascii[i] = *c;
+    }
+    else
+    {
+      ascii[i] = '?';
+    }
   }
   return ascii;
 }
@@ -74,13 +92,13 @@ dami::String ucstombs(dami::String data)
 dami::String oldconvert(dami::String data, ID3_TextEnc sourceEnc, ID3_TextEnc targetEnc)
 {
   dami::String target;
-#define ID3_IS_ASCII(enc)      ((enc) == ID3TE_ASCII || (enc) == ID3TE_ISO8859_1 || (enc) == ID3TE_UTF8)
-#define ID3_IS_UNICODE(enc)    ((enc) == ID3TE_UNICODE || (enc) == ID3TE_UTF16 || (enc) == ID3TE_UTF16BE)
-  if (ID3_IS_ASCII(sourceEnc) && ID3_IS_UNICODE(targetEnc))
+  if (ID3TE_IS_SINGLE_BYTE_ENC(sourceEnc) &&
+      ID3TE_IS_DOUBLE_BYTE_ENC(targetEnc))
   {
     target = mbstoucs(data);
   }
-  else if (ID3_IS_UNICODE(sourceEnc) && ID3_IS_ASCII(targetEnc))
+  else if (ID3TE_IS_DOUBLE_BYTE_ENC(sourceEnc) &&
+           ID3TE_IS_SINGLE_BYTE_ENC(targetEnc))
   {
     target = ucstombs(data);
   }
@@ -117,7 +135,7 @@ String dami::renderNumber(uint32 val, size_t size)
 
 namespace 
 {
-  String convert_i(iconv_t cd, String source)
+  String convert_i(iconv_t cd, String source, bool dbcs, bool bigendian)
   {
     String target;
     size_t source_size = source.size();
@@ -140,17 +158,50 @@ namespace
       size_t nconv = iconv(cd, 
                            &source_str, &source_size, 
                            &target_str, &target_size);
-      if (nconv == (size_t) -1 && errno != EINVAL && errno != E2BIG)
-      {
-// errno is probably EILSEQ here, which means either an invalid byte sequence or a valid but unconvertible byte sequence 
-        return target;
-      }
       target.append(buf, ID3LIB_BUFSIZ - target_size);
       target_str = buf;
       target_size = ID3LIB_BUFSIZ;
+      if (nconv == (size_t)-1 && (errno == EILSEQ || errno == EINVAL))
+      {
+        if (dbcs)
+        {
+          if (bigendian)
+          {
+            source_str[0] = '\0';
+            source_str[1] = '?';
+          }
+          else
+          {
+            source_str[0] = '?';
+            source_str[1] = '\0';
+          }
+        }
+        else
+        {
+          source_str[0] = '?';
+        }
+      }
+      else if (nconv == (size_t)-1 && errno != E2BIG) /* unexpected error */
+      {
+        return target;
+      }
     }
     while (source_size > 0);
     return target;
+  }
+
+  const char* getNativeCharset(void)
+  {
+    static char *charset = NULL;
+    char *oldlocale = NULL;
+
+    if (charset == NULL) {
+      oldlocale = setlocale(LC_CTYPE, "");
+      charset = nl_langinfo(CODESET);
+      setlocale(LC_CTYPE, oldlocale);
+    }
+
+    return charset;
   }
 
   const char* getFormat(ID3_TextEnc enc)
@@ -173,7 +224,11 @@ namespace
       case ID3TE_UTF8:
         format = ID3_ICONV_FORMAT_UTF8;
         break;
-        
+
+      case ID3TE_NATIVE:
+        format = getNativeCharset();
+        break;
+
       default:
         break;
     }
@@ -196,7 +251,9 @@ String dami::convert(String data, ID3_TextEnc sourceEnc, ID3_TextEnc targetEnc)
     iconv_t cd = iconv_open (targetFormat, sourceFormat);
     if (cd != (iconv_t) -1)
     {
-      target = convert_i(cd, data);
+      target = convert_i(cd, data,
+                         ID3TE_IS_DOUBLE_BYTE_ENC(sourceEnc),
+                         sourceEnc == ID3TE_UTF16BE);
       if (target.size() == 0)
       {
         //try it without iconv

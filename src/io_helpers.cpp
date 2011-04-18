@@ -142,16 +142,8 @@ String io::readUnicodeString(ID3_Reader& reader)
     {
       break;
     }
-    if (bom == -1)
-    {
-      unicode += static_cast<char>(ch2);
-      unicode += static_cast<char>(ch1);
-    }
-    else
-    {
-      unicode += static_cast<char>(ch1);
-      unicode += static_cast<char>(ch2);
-    }
+    unicode += static_cast<char>(ch1);
+    unicode += static_cast<char>(ch2);
   }
   return unicode;
 }
@@ -170,24 +162,8 @@ String io::readUnicodeText(ID3_Reader& reader, size_t len)
   {
     unicode += ch1;
     unicode += ch2;
-    unicode += readText(reader, len);
   }
-  else if (bom == 1)
-  {
-    unicode = readText(reader, len);
-  }
-  else
-  {
-    for (size_t i = 0; i < len; i += 2)
-    {
-      if (!readTwoChars(reader, ch1, ch2))
-      {
-        break;
-      }
-      unicode += ch2;
-      unicode += ch1;
-    }
-  }
+  unicode += readText(reader, len);
   return unicode;
 }
 
@@ -363,12 +339,8 @@ size_t io::writeUnicodeText(ID3_Writer& writer, String data, bool bom)
     // Write the BOM: 0xFEFF
     unicode_t BOM = 0xFEFF;
     writer.writeChars((const unsigned char*) &BOM, 2);
-    for (size_t i = 0; i < size; i += 2)
-    {
-      unicode_t ch = (data[i] << 8) | data[i+1];
-      writer.writeChars((const unsigned char*) &ch, 2);
-    }
   }
+  writer.writeChars(&data[0], size);
   return writer.getCur() - beg;
 }
 

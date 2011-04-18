@@ -51,13 +51,19 @@ String id3::v2::getString(const ID3_Frame* frame, ID3_FieldID fldName)
   {
     return "";
   }
-  ID3_TextEnc enc = fp->GetEncoding();
-  fp->SetEncoding(ID3TE_ASCII);
+  
+  const char *rawtext = fp->GetRawText();
+  if (rawtext == NULL)
+  {
+    return "";
+  }
+  String raw;
+  raw.append(rawtext, fp->Size());
+  raw.append("\0\0", 2); /* make sure we have enough terminating zeroes */
 
-  String text(fp->GetRawText(), fp->Size());
+  String res = convert(raw, fp->GetEncoding(), ID3TE_NATIVE);
 
-  fp->SetEncoding(enc);
-  return text;
+  return res;
 }
 
 String id3::v2::getStringAtIndex(const ID3_Frame* frame, ID3_FieldID fldName,
@@ -69,16 +75,32 @@ String id3::v2::getStringAtIndex(const ID3_Frame* frame, ID3_FieldID fldName,
   }
   String text;
   ID3_Field* fp = frame->GetField(fldName);
-  if (fp && fp->GetNumTextItems() < nIndex)
+  if (fp && fp->GetNumTextItems() >= nIndex)
   {
-    ID3_TextEnc enc = fp->GetEncoding();
-    fp->SetEncoding(ID3TE_ASCII);
-
-    text = fp->GetRawTextItem(nIndex);
-
-    fp->SetEncoding(enc);
+    return "";
   }
-  return text;
+  const char *rawtext = fp->GetRawTextItem(nIndex);
+  if (rawtext == NULL)
+  {
+    return "";
+  }
+  size_t rawlen = 0;
+  ID3_TextEnc enc = fp->GetEncoding();
+  if (ID3TE_IS_DOUBLE_BYTE_ENC(enc))
+  {
+    rawlen = ucslen((unicode_t *)rawtext)*2;
+  }
+  else
+  {
+    rawlen = strlen(rawtext);
+  }
+  String raw;
+  raw.append(rawtext, rawlen);
+  raw.append("\0\0", 2); /* make sure we have enough terminating zeroes */
+
+  String res = convert(raw, enc, ID3TE_NATIVE);
+
+  return res;
 }
 
 size_t id3::v2::removeFrames(ID3_TagImpl& tag, ID3_FrameID id)
